@@ -178,8 +178,8 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
     }
     // Alto fijo: la ventana de solo entrante se dimensiona con el contenido.
     return Container(
-      height: 96,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      height: 110,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: content,
     );
   }
