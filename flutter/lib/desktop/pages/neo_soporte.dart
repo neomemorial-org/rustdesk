@@ -42,7 +42,7 @@ String _errorText(Object e, {Map<int, String> byStatus = const {}}) {
   return 'No se pudo conectar con el servicio de soporte. Revisá la conexión a internet.';
 }
 
-/// Botón "Solicitar soporte" de la ventana de solo entrante.
+/// Pedido de soporte de la ventana de solo entrante: se envía solo al abrir.
 class NeoSolicitarSoporte extends StatefulWidget {
   const NeoSolicitarSoporte({Key? key}) : super(key: key);
 
@@ -57,17 +57,29 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   String? _error;
   bool _busy = false;
   Timer? _renew;
+  // Pedir soporte sin intervención; se apaga al cancelar o ante un error.
+  bool _auto = true;
+  Timer? _autoTimer;
 
   @override
   void initState() {
     super.initState();
     gFFI.serverModel.serverPasswd.addListener(_onPasswordChanged);
+    _autoTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_auto && _rid == null && !_busy && _ready) _send();
+    });
   }
+
+  bool get _ready =>
+      int.tryParse(gFFI.serverModel.serverId.text.replaceAll(' ', '')) !=
+          null &&
+      gFFI.serverModel.serverPasswd.text.length > 1;
 
   @override
   void dispose() {
     gFFI.serverModel.serverPasswd.removeListener(_onPasswordChanged);
     _renew?.cancel();
+    _autoTimer?.cancel();
     super.dispose();
   }
 
@@ -81,14 +93,19 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   Future<void> _send() async {
     final key = bind.mainGetBuildinOption(key: 'neo-broker-client-key');
     if (key.isEmpty) {
-      setState(() => _error = 'Falta configurar el servicio de soporte.');
+      setState(() {
+        _auto = false;
+        _error = 'Falta configurar el servicio de soporte.';
+      });
       return;
     }
     final id = gFFI.serverModel.serverId.text.replaceAll(' ', '');
     final pw = gFFI.serverModel.serverPasswd.text;
-    if (int.tryParse(id) == null || pw.length <= 1) {
-      setState(() => _error =
-          'Todavía no hay ID o contraseña. Esperá a que diga "Listo" y probá de nuevo.');
+    if (!_ready) {
+      setState(() {
+        _auto = true;
+        _error = null;
+      });
       return;
     }
     setState(() {
@@ -116,6 +133,7 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
       }
     } catch (e) {
       _rid = null;
+      _auto = false;
       _error = _errorText(e, byStatus: {
         401: 'El servicio de soporte rechazó el pedido (clave de cliente inválida).',
         429: 'Demasiados pedidos seguidos. Esperá un minuto y probá de nuevo.',
@@ -130,6 +148,7 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
     setState(() {
       _rid = null;
       _cancel = null;
+      _auto = false;
     });
     try {
       await _call('POST', '/v1/solicitudes/cancelar',
@@ -142,16 +161,28 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   @override
   Widget build(BuildContext context) {
     final small = Theme.of(context).textTheme.bodySmall;
+    Widget loading(String text) => Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 10),
+            Flexible(child: Text(text, style: small)),
+          ],
+        );
     final Widget content;
     if (_rid != null) {
       content = Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('Pedido enviado, esperando a un técnico…',
-              textAlign: TextAlign.center, style: small),
+          loading('Soporte solicitado, esperando a un técnico…'),
           TextButton(onPressed: _cancelRequest, child: const Text('Cancelar')),
         ],
       );
+    } else if (_auto || _busy) {
+      content = Center(child: loading('Solicitando soporte…'));
     } else {
       content = Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -160,8 +191,8 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
             width: double.infinity,
             height: 38,
             child: ElevatedButton(
-              onPressed: _busy ? null : _send,
-              child: Text(_busy ? 'Enviando…' : 'Solicitar soporte'),
+              onPressed: _send,
+              child: Text(_error != null ? 'Reintentar' : 'Solicitar soporte'),
             ),
           ),
           if (_error != null)
