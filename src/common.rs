@@ -2522,6 +2522,10 @@ fn apply_neo_branding() {
     let mut hard = config::HARD_SETTINGS.write().unwrap();
     hard.insert("conn-type".to_owned(), "incoming".to_owned());
     hard.insert("disable-installation".to_owned(), "Y".to_owned());
+    config::BUILTIN_SETTINGS
+        .write()
+        .unwrap()
+        .insert("hide-powered-by-me".to_owned(), "Y".to_owned());
 }
 
 pub fn load_custom_client() {
