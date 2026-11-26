@@ -2515,7 +2515,17 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
     ThrottledInterval::new(i)
 }
 
+/// neoMemorial Soporte: cliente de marca propia en modo "solo entrante" (tipo QuickSupport).
+/// Va por codigo porque `custom.txt` solo se acepta firmado por RustDesk.
+fn apply_neo_branding() {
+    *config::APP_NAME.write().unwrap() = "neoMemorial Soporte".to_owned();
+    let mut hard = config::HARD_SETTINGS.write().unwrap();
+    hard.insert("conn-type".to_owned(), "incoming".to_owned());
+    hard.insert("disable-installation".to_owned(), "Y".to_owned());
+}
+
 pub fn load_custom_client() {
+    apply_neo_branding();
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
