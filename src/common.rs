@@ -2518,14 +2518,35 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 /// neoMemorial Soporte: cliente de marca propia en modo "solo entrante" (tipo QuickSupport).
 /// Va por codigo porque `custom.txt` solo se acepta firmado por RustDesk.
 fn apply_neo_branding() {
-    *config::APP_NAME.write().unwrap() = "neoMemorial Soporte".to_owned();
+    // NEO_VARIANT=management compila la consola del tecnico (solo saliente).
+    let admin = option_env!("NEO_VARIANT") == Some("management");
+    *config::APP_NAME.write().unwrap() = if admin {
+        "neoMemorial Soporte Admin"
+    } else {
+        "neoMemorial Soporte"
+    }
+    .to_owned();
     let mut hard = config::HARD_SETTINGS.write().unwrap();
-    hard.insert("conn-type".to_owned(), "incoming".to_owned());
+    hard.insert(
+        "conn-type".to_owned(),
+        if admin { "outgoing" } else { "incoming" }.to_owned(),
+    );
     hard.insert("disable-installation".to_owned(), "Y".to_owned());
-    config::BUILTIN_SETTINGS
-        .write()
-        .unwrap()
-        .insert("hide-powered-by-me".to_owned(), "Y".to_owned());
+    let mut overwrite = config::OVERWRITE_SETTINGS.write().unwrap();
+    for (k, v) in [
+        ("custom-rendezvous-server", "kc54fe.easypanel.host"),
+        ("relay-server", "kc54fe.easypanel.host:21117"),
+        ("key", "lNlDke1DTtYTy53GRU0BEXOX7G/U2oqa9yiM3wDksOE="),
+    ] {
+        overwrite.insert(k.to_owned(), v.to_owned());
+    }
+    let mut builtin = config::BUILTIN_SETTINGS.write().unwrap();
+    builtin.insert("hide-powered-by-me".to_owned(), "Y".to_owned());
+    // Clave de cliente del broker de pedidos: solo permite crear pedidos.
+    builtin.insert(
+        "neo-broker-client-key".to_owned(),
+        option_env!("NEO_BROKER_CLIENT_KEY").unwrap_or("").to_owned(),
+    );
 }
 
 pub fn load_custom_client() {

@@ -1,7 +1,9 @@
 # neoMemorial Soporte: cliente RustDesk de marca propia, solo Windows x64, portable
 # (un unico .exe que no se instala). Es el job "build-for-windows-flutter" de
 # flutter-build.yml recortado: sin arm64, sin MSI, sin firma y sin publicar release.
-# El resultado queda como artifact del run: neoMemorial-Soporte-windows-x64.
+# Compila dos variantes (NEO_VARIANT, ver apply_neo_branding en src/common.rs):
+#   quicksupport -> artifact neoMemorial-Soporte-windows-x64 (cliente, solo entrante)
+#   management   -> artifact neoMemorial-Soporte-Admin-windows-x64 (consola, solo saliente)
 name: neoMemorial Soporte (Windows)
 
 on:
@@ -22,9 +24,6 @@ env:
   FLUTTER_VERSION: "3.24.5"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
-  # Nombre del .exe interno: tiene que ser "<APP_NAME>.exe" (ver apply_neo_branding en src/common.rs).
-  NEO_APP_EXE: "neoMemorial Soporte.exe"
-  NEO_OUTPUT_EXE: "neoMemorial-Soporte.exe"
 
 jobs:
   generate-bridge:
@@ -40,9 +39,29 @@ jobs:
       target_version: Windows10
 
   build-windows:
-    name: neoMemorial Soporte x86_64
+    name: ${{ matrix.job.artifact }}
     needs: [build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          # app-exe tiene que ser "<APP_NAME>.exe" (ver apply_neo_branding en src/common.rs).
+          - {
+              variant: quicksupport,
+              app-exe: "neoMemorial Soporte.exe",
+              output-exe: "neoMemorial-Soporte.exe",
+              artifact: neoMemorial-Soporte-windows-x64,
+            }
+          - {
+              variant: management,
+              app-exe: "neoMemorial Soporte Admin.exe",
+              output-exe: "neoMemorial-Soporte-Admin.exe",
+              artifact: neoMemorial-Soporte-Admin-windows-x64,
+            }
+    env:
+      NEO_APP_EXE: ${{ matrix.job.app-exe }}
+      NEO_OUTPUT_EXE: ${{ matrix.job.output-exe }}
     steps:
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
@@ -102,6 +121,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           prefix-key: neo-windows-2022
+          key: ${{ matrix.job.variant }}
 
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
@@ -130,6 +150,9 @@ jobs:
         shell: bash
 
       - name: Build rustdesk
+        env:
+          NEO_VARIANT: ${{ matrix.job.variant }}
+          NEO_BROKER_CLIENT_KEY: ${{ secrets.NEO_BROKER_CLIENT_KEY }}
         run: |
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           mv ./flutter/build/windows/x64/runner/Release ./rustdesk
@@ -175,6 +198,6 @@ jobs:
       - name: Upload neoMemorial Soporte
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: neoMemorial-Soporte-windows-x64
-          path: ./neo-output/${{ env.NEO_OUTPUT_EXE }}
+          name: ${{ matrix.job.artifact }}
+          path: ./neo-output/${{ matrix.job.output-exe }}
           if-no-files-found: error
