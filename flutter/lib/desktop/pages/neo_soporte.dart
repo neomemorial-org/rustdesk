@@ -6,32 +6,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import 'package:http/http.dart' as http;
 import 'package:window_manager/window_manager.dart';
 
 const _kBroker = 'https://apps-soporte-broker.kc54fe.easypanel.host';
 const _kTokenOption = 'neo-broker-token';
-const _kTimeout = Duration(seconds: 10);
+const _kTimeout = Duration(seconds: 40);
 
 class _BrokerError implements Exception {
   final int status;
   _BrokerError(this.status);
 }
 
+// Las llamadas van por el cliente HTTP de Rust: el de Dart cierra el programa
+// en Windows 7.
 Future<Map<String, dynamic>> _call(String method, String path,
     {Map<String, dynamic>? body, Map<String, String>? headers}) async {
-  final uri = Uri.parse('$_kBroker$path');
-  final h = {'Content-Type': 'application/json', ...?headers};
-  final http.Response resp = method == 'GET'
-      ? await http.get(uri, headers: h).timeout(_kTimeout)
-      : await http
-          .post(uri, headers: h, body: jsonEncode(body ?? {}))
-          .timeout(_kTimeout);
-  if (resp.statusCode < 200 || resp.statusCode >= 300) {
-    throw _BrokerError(resp.statusCode);
+  final url = '$_kBroker$path';
+  await bind.mainHttpRequest(
+      url: url,
+      method: method.toLowerCase(),
+      body: method == 'GET' ? null : jsonEncode(body ?? {}),
+      header: jsonEncode({'Content-Type': 'application/json', ...?headers}));
+  String? res = ' ';
+  final deadline = DateTime.now().add(_kTimeout);
+  while (res == ' ') {
+    if (DateTime.now().isAfter(deadline)) throw TimeoutException(url);
+    await Future.delayed(const Duration(milliseconds: 100));
+    res = await bind.mainGetHttpStatus(url: url);
   }
-  if (resp.body.isEmpty) return {};
-  final decoded = jsonDecode(utf8.decode(resp.bodyBytes));
+  // Ante un fallo de red Rust devuelve el texto del error, no JSON.
+  final parsed = jsonDecode(res ?? '');
+  final status = parsed['status_code'];
+  if (status is! int) throw const FormatException('status_code');
+  if (status < 200 || status >= 300) throw _BrokerError(status);
+  final text = parsed['body'];
+  if (text is! String || text.isEmpty) return {};
+  final decoded = jsonDecode(text);
   return decoded is Map<String, dynamic> ? decoded : {};
 }
 
