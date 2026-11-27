@@ -1857,6 +1857,10 @@ class RustdeskImpl {
     return mainGetLocalOption(key: key, hint: hint);
   }
 
+  int mainNeoAliveConnCount({dynamic hint}) {
+    return 0;
+  }
+
   String installInstallOptions({dynamic hint}) {
     throw UnimplementedError("installInstallOptions");
   }

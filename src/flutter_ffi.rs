@@ -2669,6 +2669,13 @@ pub fn main_get_buildin_option(key: String) -> SyncReturn<String> {
     SyncReturn(get_builtin_option(&key))
 }
 
+pub fn main_neo_alive_conn_count() -> SyncReturn<i32> {
+    #[cfg(windows)]
+    return SyncReturn(crate::Connection::alive_conns().len() as i32);
+    #[cfg(not(windows))]
+    SyncReturn(0)
+}
+
 pub fn main_check_hwcodec() {
     check_hwcodec()
 }

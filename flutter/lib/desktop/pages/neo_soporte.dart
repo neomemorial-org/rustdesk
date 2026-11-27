@@ -60,12 +60,28 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   // Pedir soporte sin intervención; se apaga al cancelar o ante un error.
   bool _auto = true;
   Timer? _autoTimer;
+  // null: nadie se conectó todavía; true: técnico conectado; false: ya terminó.
+  bool? _attending;
 
   @override
   void initState() {
     super.initState();
     gFFI.serverModel.serverPasswd.addListener(_onPasswordChanged);
     _autoTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final connected = bind.mainNeoAliveConnCount() > 0;
+      if (connected && _attending != true) {
+        // El técnico entró: el broker ya sacó el pedido de la cola.
+        _renew?.cancel();
+        setState(() {
+          _attending = true;
+          _rid = null;
+          _cancel = null;
+          _auto = false;
+          _error = null;
+        });
+      } else if (!connected && _attending == true) {
+        setState(() => _attending = false);
+      }
       if (_auto && _rid == null && !_busy && _ready) _send();
     });
   }
@@ -173,7 +189,16 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
           ],
         );
     final Widget content;
-    if (_rid != null) {
+    if (_attending == true) {
+      content = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 18),
+          const SizedBox(width: 8),
+          Flexible(child: Text('Un técnico está conectado', style: small)),
+        ],
+      );
+    } else if (_rid != null) {
       content = Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -195,6 +220,11 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
               child: Text(_error != null ? 'Reintentar' : 'Solicitar soporte'),
             ),
           ),
+          if (_error == null && _attending == false)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('La sesión de soporte terminó.', style: small),
+            ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
