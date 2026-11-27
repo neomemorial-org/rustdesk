@@ -1,12 +1,20 @@
-//! Icono de bandeja del cliente neoMemorial Soporte (solo entrante, sin instalar).
+//! Icono de bandeja de neoMemorial Soporte (cliente y consola, sin instalar).
 
 use hbb_common::{allow_err, log, ResultType};
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
+const BROKER_PENDING_URL: &str =
+    "https://apps-soporte-broker.kc54fe.easypanel.host/v1/admin/solicitudes";
+
+pub fn enabled() -> bool {
+    use hbb_common::config::{is_incoming_only, is_outgoing_only};
+    (is_incoming_only() || is_outgoing_only()) && !crate::platform::is_installed()
+}
+
 /// Llamado por la ventana principal al arrancar.
 pub fn ensure_running() {
-    if !hbb_common::config::is_incoming_only() || crate::platform::is_installed() {
+    if !enabled() {
         return;
     }
     if !crate::check_process("--tray", true) {
@@ -22,8 +30,9 @@ fn autostart_enabled() -> bool {
         .is_ok()
 }
 
-// Al iniciar Windows solo arranca la bandeja: el pedido de soporte se envia
-// recien cuando el usuario abre la ventana.
+// Al iniciar Windows solo arranca la bandeja. En el cliente, el pedido de
+// soporte se envia recien cuando el usuario abre la ventana; en la consola,
+// la bandeja abre la ventana cuando llega un pedido.
 fn set_autostart(enable: bool) -> ResultType<()> {
     use winreg::{enums::HKEY_CURRENT_USER, RegKey};
     let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(RUN_KEY)?;
@@ -35,6 +44,50 @@ fn set_autostart(enable: bool) -> ResultType<()> {
         key.delete_value(&name)?;
     }
     Ok(())
+}
+
+fn pending_ids(token: &str) -> ResultType<std::collections::HashSet<String>> {
+    let body = crate::hbbs_http::create_http_client_with_url(BROKER_PENDING_URL)
+        .get(BROKER_PENDING_URL)
+        .header("Authorization", format!("Bearer {token}"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()?
+        .error_for_status()?
+        .text()?;
+    let v: serde_json::Value = serde_json::from_str(&body)?;
+    Ok(v["solicitudes"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| match &x["id"] {
+                    serde_json::Value::String(s) => Some(s.clone()),
+                    serde_json::Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+// Consola: avisa (abriendo la ventana) cuando aparece un equipo que no estaba
+// en la consulta anterior. Usa el token de sesion que guardo la ventana.
+fn watch_requests(sender: std::sync::mpsc::Sender<()>) {
+    let mut known = std::collections::HashSet::new();
+    loop {
+        let token = hbb_common::config::LocalConfig::get_option_from_file("neo-broker-token");
+        if !token.is_empty() {
+            match pending_ids(&token) {
+                Ok(ids) => {
+                    if ids.iter().any(|id| !known.contains(id)) && sender.send(()).is_err() {
+                        return;
+                    }
+                    known = ids;
+                }
+                Err(err) => log::trace!("neo broker poll failed: {}", err),
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
 }
 
 pub fn run() -> ResultType<()> {
@@ -73,6 +126,10 @@ pub fn run() -> ResultType<()> {
         allow_err!(crate::run_me::<&str>(vec![]));
     };
     let mut tray: Option<TrayIcon> = None;
+    let (request_tx, request_rx) = std::sync::mpsc::channel::<()>();
+    if hbb_common::config::is_outgoing_only() {
+        std::thread::spawn(move || watch_requests(request_tx));
+    }
     let mut last_click = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
@@ -110,6 +167,13 @@ pub fn run() -> ResultType<()> {
                 allow_err!(crate::platform::windows::try_kill_rustdesk_main_window_process());
                 *control_flow = ControlFlow::Exit;
             }
+        }
+
+        if request_rx.try_recv().is_ok() {
+            unsafe {
+                winapi::um::winuser::MessageBeep(winapi::um::winuser::MB_ICONASTERISK);
+            }
+            open_func();
         }
 
         if let Ok(TrayEvent::Click {

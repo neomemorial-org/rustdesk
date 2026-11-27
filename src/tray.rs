@@ -11,7 +11,7 @@ use std::time::Duration;
 
 pub fn start_tray() {
     #[cfg(windows)]
-    if hbb_common::config::is_incoming_only() && !crate::platform::is_installed() {
+    if crate::neo_tray::enabled() {
         allow_err!(crate::neo_tray::run());
         return;
     }
