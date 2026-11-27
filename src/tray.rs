@@ -10,6 +10,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub fn start_tray() {
+    #[cfg(windows)]
+    if hbb_common::config::is_incoming_only() && !crate::platform::is_installed() {
+        allow_err!(crate::neo_tray::run());
+        return;
+    }
     if crate::ui_interface::get_builtin_option(keys::OPTION_HIDE_TRAY) == "Y" {
         #[cfg(not(target_os = "macos"))]
         {

@@ -105,6 +105,10 @@ pub fn core_main() -> Option<CoreMainAction> {
         }
         i += 1;
     }
+    #[cfg(windows)]
+    if args.is_empty() {
+        crate::neo_tray::ensure_running();
+    }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     if args.is_empty() {
         #[cfg(target_os = "linux")]

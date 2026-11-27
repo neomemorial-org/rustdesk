@@ -7,6 +7,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:http/http.dart' as http;
+import 'package:window_manager/window_manager.dart';
 
 const _kBroker = 'https://apps-soporte-broker.kc54fe.easypanel.host';
 const _kTokenOption = 'neo-broker-token';
@@ -50,7 +51,8 @@ class NeoSolicitarSoporte extends StatefulWidget {
   State<NeoSolicitarSoporte> createState() => _NeoSolicitarSoporteState();
 }
 
-class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
+class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte>
+    with WindowListener {
   String? _rid;
   String? _cancel;
   String? _sentPassword;
@@ -62,12 +64,35 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   Timer? _autoTimer;
   // null: nadie se conectó todavía; true: técnico conectado; false: ya terminó.
   bool? _attending;
+  bool _visible = true;
+
+  // Sin botón en la barra de tareas, minimizar equivale a mandarla a la bandeja.
+  @override
+  void onWindowMinimize() {
+    windowManager.hide();
+  }
 
   @override
   void initState() {
     super.initState();
     gFFI.serverModel.serverPasswd.addListener(_onPasswordChanged);
-    _autoTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    windowManager.addListener(this);
+    windowManager.setSkipTaskbar(true);
+    _autoTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final visible = await windowManager.isVisible();
+      if (!mounted) return;
+      if (visible && !_visible) {
+        // Reabierta desde la bandeja: Windows repone el botón de la barra de
+        // tareas, y si no hay pedido ni técnico se vuelve a pedir soporte.
+        windowManager.setSkipTaskbar(true);
+        if (_rid == null && !_busy && _attending != true) {
+          setState(() {
+            _auto = true;
+            _error = null;
+          });
+        }
+      }
+      _visible = visible;
       final connected = bind.mainNeoAliveConnCount() > 0;
       if (connected && _attending != true) {
         // El técnico entró: el broker ya sacó el pedido de la cola.
@@ -94,6 +119,7 @@ class _NeoSolicitarSoporteState extends State<NeoSolicitarSoporte> {
   @override
   void dispose() {
     gFFI.serverModel.serverPasswd.removeListener(_onPasswordChanged);
+    windowManager.removeListener(this);
     _renew?.cancel();
     _autoTimer?.cancel();
     super.dispose();

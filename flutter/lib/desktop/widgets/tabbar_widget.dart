@@ -481,6 +481,11 @@ class _DesktopTabState extends State<DesktopTab>
 
     // hide window on close
     if (isMainWindow) {
+      // neoMemorial Soporte (solo entrante): queda vivo en la bandeja.
+      if (isWindows && bind.isIncomingOnly()) {
+        await mainWindowClose();
+        return;
+      }
       if (rustDeskWinManager.getActiveWindows().contains(kMainWindowId)) {
         await rustDeskWinManager.unregisterActiveWindow(kMainWindowId);
       }
